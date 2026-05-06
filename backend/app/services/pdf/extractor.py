@@ -11,7 +11,7 @@ from app.services.pdf.parsers import (
     fatura_blink, fatura_saveincloud, fatura_locacao, nfcom, generic
 )
 from app.services.pdf.utils import normalizar_nome_arquivo
-from app.services.referencias import filial_por_cnpj, fornecedor_por_cnpj
+from app.services.referencias import filial_por_cnpj, fornecedor_por_cnpj, fornecedor_por_nome
 
 
 # Ordem importa: parsers mais específicos primeiro, genérico por último
@@ -97,17 +97,27 @@ def extrair_documento(caminho: Path, nome_original: str) -> dict:
 
     fornecedor_codigo = None
     fornecedor_nome_cadastro = None
+    fornecedor_cnpj_final = resultado.cnpj_emissor
     if resultado.cnpj_emissor:
         f = fornecedor_por_cnpj(resultado.cnpj_emissor)
         if f:
             fornecedor_codigo = f["codigo"]
             fornecedor_nome_cadastro = f["nome"]
+            fornecedor_cnpj_final = f["cnpj"] or resultado.cnpj_emissor
+    elif resultado.nome_emissor:
+        f = fornecedor_por_nome(resultado.nome_emissor)
+        if f:
+            fornecedor_codigo = f["codigo"]
+            fornecedor_nome_cadastro = f["nome"]
+            fornecedor_cnpj_final = f["cnpj"]
 
     nome_fornecedor_final = fornecedor_nome_cadastro or resultado.nome_emissor or "DESCONHECIDO"
 
     obs = list(resultado.observacoes)
     if usou_ocr:
         obs.append("Texto extraído por OCR — conferir campos na revisão.")
+    if not resultado.cnpj_emissor and fornecedor_codigo:
+        obs.append("Fornecedor identificado por nome porque o CNPJ do emissor não consta no PDF.")
     if resultado.cnpj_emissor and not fornecedor_codigo:
         obs.append("Fornecedor não cadastrado no Protheus — verificar inclusão.")
     if resultado.cnpj_tomador and not filial_codigo:
@@ -129,7 +139,7 @@ def extrair_documento(caminho: Path, nome_original: str) -> dict:
         "filial_cnpj": resultado.cnpj_tomador,
         "fornecedor_codigo": fornecedor_codigo,
         "fornecedor_nome": nome_fornecedor_final,
-        "fornecedor_cnpj": resultado.cnpj_emissor,
+        "fornecedor_cnpj": fornecedor_cnpj_final,
         "tipo_pedido": detectar_tipo_pedido(tipo_doc, texto),
         "documentos_tipo": resultado.tipo_documento_legivel,
         "numeros_documentos": [resultado.numero_documento] if resultado.numero_documento else [],

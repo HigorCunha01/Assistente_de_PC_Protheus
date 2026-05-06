@@ -12,7 +12,7 @@ from app.services.pdf.utils import extrair_cnpjs, parse_decimal_br, remover_zero
 def parse(texto: str, caminho: Path) -> ParseResult:
     upper = texto.upper()
     # Heurística: fatura/recibo de locação tem "FATURA" ou "RECIBO" + "LOCAÇÃO".
-    if not ((("FATURA" in upper) or ("RECIBO" in upper)) and ("LOCA" in upper or "LOCAÇÃO" in upper)):
+    if not ((("FATURA" in upper) or ("RECIBO" in upper)) and ("LOCACAO" in upper or "LOCAÇÃO" in upper)):
         return ParseResult(template_usado="fatura_locacao", confianca=0.0)
 
     cnpjs = extrair_cnpjs(texto)

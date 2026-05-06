@@ -6,7 +6,22 @@ import re
 from pathlib import Path
 
 from app.services.pdf.parsers.base import ParseResult, ItemExtraido
-from app.services.pdf.utils import extrair_cnpjs, parse_decimal_br, remover_zeros_esquerda
+from app.services.pdf.utils import extrair_cnpjs, normalizar_cnpj, parse_decimal_br, remover_zeros_esquerda
+
+
+def _extrair_total_nf(texto: str):
+    padroes = [
+        r"VALOR\s+TOTAL\s+NF\s*([\d.]+,\d{2}|[\d]+[.]\d{2})",
+        r"TOTAL\s+A\s+PAGAR\s*(?:-\s*R\$|R\$|:)?\s*([\d.]+,\d{2}|[\d]+[.]\d{2})",
+        r"TOTAL\s+A\s+PAGAR[\s\S]{0,30}?([\d.]+,\d{2}|[\d]+[.]\d{2})",
+    ]
+    for padrao in padroes:
+        m = re.search(padrao, texto, re.IGNORECASE)
+        if m:
+            valor = parse_decimal_br(m.group(1))
+            if valor:
+                return valor
+    return None
 
 
 def parse(texto: str, caminho: Path) -> ParseResult:
@@ -32,6 +47,13 @@ def parse(texto: str, caminho: Path) -> ParseResult:
         else:
             cnpj_emissor = cnpj_emissor or c
 
+    if not cnpj_tomador:
+        m_tomador_ruidoso = re.search(r"CPF/CNP[\s\S]{0,40}?((?:\D*\d){14})", texto, re.IGNORECASE)
+        if m_tomador_ruidoso:
+            cnpj_ruidoso = normalizar_cnpj(m_tomador_ruidoso.group(1))
+            if cnpj_ruidoso.startswith(raizes):
+                cnpj_tomador = cnpj_ruidoso
+
     # Nome emissor: linha antes do CNPJ do emissor
     nome_emissor = None
     linhas = texto.split("\n")
@@ -49,6 +71,8 @@ def parse(texto: str, caminho: Path) -> ParseResult:
     m = re.search(r"NOTA\s*FISCAL\s*FATURA\s*N[º°]?\s*(\d+)", texto, re.IGNORECASE)
     if not m:
         m = re.search(r"NOTA\s*FISCAL\s*(?:FATURA\s*)?(?:No\.?|N[º°]?)\s*(\d+)", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"N[º°]?\s*NFCOM\s*(\d+)", texto, re.IGNORECASE)
     if m:
         numero = remover_zeros_esquerda(m.group(1))
 
@@ -110,19 +134,22 @@ def parse(texto: str, caminho: Path) -> ParseResult:
                 if desc and vu is not None:
                     itens.append(ItemExtraido(descricao=desc, quantidade=qtd, valor_unitario=vu))
 
-    if not itens:
-        m_total = re.search(r"TOTAL\s+A\s+PAGAR:\s*R\$\s*([\d.]+,\d{2}|[\d]+[.]\d{2})", texto, re.IGNORECASE)
-        if not m_total:
-            m_total = re.search(r"VALOR\s+TOTAL\s+NF\s*([\d.]+,\d{2}|[\d]+[.]\d{2})", texto, re.IGNORECASE)
-        if m_total:
-            valor_total = parse_decimal_br(m_total.group(1))
-            if valor_total:
-                itens.append(ItemExtraido(
-                    descricao="Serviços de comunicação",
-                    quantidade=1.0,
-                    valor_unitario=valor_total,
-                    valor_unitario_calculado=True,
-                ))
+    valor_total_nf = _extrair_total_nf(texto)
+    if valor_total_nf and ("TELEFONICA BRASIL" in upper or "TELEFÔNICA BRASIL" in upper or "VIVO.COM" in upper):
+        itens = [ItemExtraido(
+            descricao="Serviços de telecomunicação",
+            quantidade=1.0,
+            valor_unitario=valor_total_nf,
+            valor_unitario_calculado=True,
+        )]
+
+    if not itens and valor_total_nf:
+        itens.append(ItemExtraido(
+            descricao="Serviços de comunicação",
+            quantidade=1.0,
+            valor_unitario=valor_total_nf,
+            valor_unitario_calculado=True,
+        ))
 
     confianca = 0.0
     if cnpj_emissor and cnpj_tomador and numero: confianca += 0.6

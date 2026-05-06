@@ -22,6 +22,12 @@ def consolidar_fichas(fichas: list[FichaPedido]) -> list[FichaPedido]:
         if f.status_extracao in ("manual", "erro"):
             grupos[(f.arquivos_origem[0] if f.arquivos_origem else id(f),)] = [f]
             continue
+        # Faturas de comunicação/telecom costumam representar contas, links ou
+        # contratos diferentes mesmo quando fornecedor e filial são iguais.
+        # Mantê-las separadas evita sugerir um PC errado após somar documentos.
+        if f.documentos_tipo == "NF Comunicação":
+            grupos[(f.arquivos_origem[0] if f.arquivos_origem else id(f),)] = [f]
+            continue
         grupos.setdefault(_chave(f), []).append(f)
 
     consolidadas: list[FichaPedido] = []

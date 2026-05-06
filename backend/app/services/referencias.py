@@ -1,6 +1,8 @@
 """Leitura das planilhas de referência (Filiais, Fornecedores, Pedidos de Compra)."""
 from pathlib import Path
 from typing import Optional
+import re
+import unicodedata
 import openpyxl
 
 from app.config import settings
@@ -20,6 +22,12 @@ def _normalizar_cnpj(valor) -> str:
 
 def _strip(valor) -> str:
     return str(valor).strip() if valor is not None else ""
+
+
+def _normalizar_nome(valor) -> str:
+    texto = unicodedata.normalize("NFKD", _strip(valor).upper())
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    return re.sub(r"[^A-Z0-9]", "", texto)
 
 
 def _carregar_xlsx(path: Path) -> list[dict]:
@@ -172,6 +180,38 @@ def fornecedor_por_cnpj(cnpj: str) -> Optional[dict]:
                 "cnpj": cnpj_norm,
             }
     return None
+
+
+def fornecedor_por_nome(nome: str) -> Optional[dict]:
+    """Retorna fornecedor por nome normalizado quando o CNPJ não consta no PDF."""
+    nome_norm = _normalizar_nome(nome)
+    if not nome_norm:
+        return None
+
+    path = settings.referencias_dir / settings.arquivo_fornecedores
+    rows = _get_cached("fornecedores", path)
+
+    candidatos = []
+    for r in rows:
+        nome_cadastro = _strip(r["NOME"])
+        cadastro_norm = _normalizar_nome(nome_cadastro)
+        if not cadastro_norm:
+            continue
+        if cadastro_norm == nome_norm:
+            candidatos = [r]
+            break
+        if nome_norm in cadastro_norm or cadastro_norm in nome_norm:
+            candidatos.append(r)
+
+    if len(candidatos) != 1:
+        return None
+
+    r = candidatos[0]
+    return {
+        "codigo": _strip(r["NUMERO DO FORNECEDOR"]),
+        "nome": _strip(r["NOME"]),
+        "cnpj": _normalizar_cnpj(r["CNPJ"]),
+    }
 
 
 def pedidos_compra_por_fornecedor_filial(fornecedor_cnpj: str, filial: str) -> list[dict]:
