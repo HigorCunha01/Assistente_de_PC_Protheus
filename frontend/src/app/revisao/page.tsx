@@ -156,6 +156,17 @@ function FichaCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Field label="Nome do arquivo">
+            <Input value={ficha.arquivos_origem.join(", ")} readOnly />
+          </Field>
+          {ficha.sugestao_pc_num && (
+            <Field label="PC para cópia">
+              <Input
+                value={ficha.sugestao_pc_num}
+                onChange={(e) => onUpdate({ sugestao_pc_num: e.target.value })}
+              />
+            </Field>
+          )}
           <Field label="Filial">
             <Input value={ficha.filial_codigo || ""} onChange={(e) => onUpdate({ filial_codigo: e.target.value })} />
           </Field>
@@ -199,7 +210,7 @@ function FichaCard({
               onChange={(e) => onUpdate({ documentos_tipo: e.target.value })}
             />
           </Field>
-          <Field label="Números dos docs (vírgula)">
+          <Field label="Número(s) do(s) documento(s)">
             <Input
               value={ficha.numeros_documentos.join(", ")}
               onChange={(e) =>
@@ -216,12 +227,7 @@ function FichaCard({
 
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold">Itens</h3>
-              <p className="text-sm text-muted-foreground">
-                Total do documento: {formatCurrency(totalDocumento)}
-              </p>
-            </div>
+            <h3 className="font-semibold">Itens</h3>
             <Button size="sm" variant="outline" onClick={onAddItem}>
               + Adicionar item
             </Button>
@@ -258,9 +264,7 @@ function FichaCard({
             )}
             {ficha.itens.length > 0 && (
               <div className="grid grid-cols-1 gap-2 rounded border border-blue-200 bg-blue-50 p-2 text-sm font-semibold text-blue-950 md:grid-cols-[1fr_100px_120px_auto]">
-                <span>TOTAL DO DOCUMENTO</span>
-                <span>1</span>
-                <span>{formatCurrency(totalDocumento)}</span>
+                <span className="md:col-span-3">TOTAL DO DOCUMENTO</span>
                 <span>{formatCurrency(totalDocumento)}</span>
               </div>
             )}

@@ -1,13 +1,12 @@
-"""Sugere PC antigo pra cópia, baseado em filial+fornecedor e proximidade de preço.
+"""Sugere PC antigo pra cópia, baseado em filial+fornecedor e data de emissão.
 
 Regra:
 1. Filtra PCs que têm o mesmo fornecedor + mesma filial (obrigatório).
-2. Para cada item da ficha, calcula a "distância" de preço pro item mais próximo
-   em cada PC candidato.
-3. Escolhe o PC com menor distância total. Empate é desempatado pela data mais
-   recente (DT EMISSAO PC).
-4. Se não houver PC do mesmo fornecedor+filial, não sugere nada.
+2. Escolhe o PC com DT EMISSAO PC mais recente.
+3. Se não houver PC do mesmo fornecedor+filial, tenta validar o PC informado no
+   nome do arquivo.
 """
+from datetime import date, datetime
 import re
 
 from app.schemas.ficha import FichaPedido
@@ -21,7 +20,7 @@ TOLERANCIA_EXATA = 0.01
 
 def sugerir_pedido_compra(ficha: FichaPedido) -> None:
     """Anota a ficha (in place) com sugestao_pc_num + obs sugerida."""
-    if not ficha.fornecedor_cnpj or not ficha.filial_codigo or not ficha.itens:
+    if not ficha.fornecedor_cnpj or not ficha.filial_codigo:
         return
 
     candidatos = pedidos_compra_por_fornecedor_filial(ficha.fornecedor_cnpj, ficha.filial_codigo)
@@ -43,47 +42,13 @@ def sugerir_pedido_compra(ficha: FichaPedido) -> None:
     if not pcs:
         return
 
-    if pc_nome_arquivo and pc_nome_arquivo in pcs:
-        _aplicar_pc_sugerido(ficha, pc_nome_arquivo, pcs[pc_nome_arquivo], match_exato=True)
-        return
-    if pc_nome_arquivo:
-        linhas_pc_nome = pedidos_compra_por_numero(pc_nome_arquivo)
-        if _pc_do_nome_compativel(ficha, linhas_pc_nome):
-            _aplicar_pc_sugerido(ficha, pc_nome_arquivo, linhas_pc_nome, match_exato=True)
-            return
-
-    # Pra cada PC, calcula distância total e flag de match exato
-    melhor_pc = None
-    melhor_distancia = float("inf")
-    melhor_data = ""
-    melhor_exato = False
-
-    for pc_num, linhas_pc in pcs.items():
-        distancia, exato = _calcular_distancia(ficha.itens, linhas_pc)
-        # data mais recente entre as linhas do PC
-        data_pc = max((l["dt_emissao"] for l in linhas_pc), default="")
-
-        # Critério: menor distância. Em empate de distância, exato vence; depois data mais recente.
-        melhor = False
-        if distancia < melhor_distancia:
-            melhor = True
-        elif distancia == melhor_distancia:
-            if exato and not melhor_exato:
-                melhor = True
-            elif exato == melhor_exato and data_pc > melhor_data:
-                melhor = True
-
-        if melhor:
-            melhor_pc = (pc_num, linhas_pc)
-            melhor_distancia = distancia
-            melhor_data = data_pc
-            melhor_exato = exato
+    melhor_pc = _pc_mais_recente(pcs)
 
     if not melhor_pc:
         return
 
     pc_num, linhas = melhor_pc
-    _aplicar_pc_sugerido(ficha, pc_num, linhas, match_exato=melhor_exato)
+    _aplicar_pc_sugerido(ficha, pc_num, linhas, match_exato=True)
 
 
 def _aplicar_pc_sugerido(ficha: FichaPedido, pc_num: str, linhas: list[dict], match_exato: bool) -> None:
@@ -99,6 +64,38 @@ def _aplicar_pc_sugerido(ficha: FichaPedido, pc_num: str, linhas: list[dict], ma
         ficha.observacoes.append(
             f"PC sugerido por proximidade — preços do PC antigo diferem do documento. Conferir antes de copiar."
         )
+
+
+def _pc_mais_recente(pcs: dict[str, list[dict]]) -> tuple[str, list[dict]] | None:
+    melhor: tuple[str, list[dict]] | None = None
+    melhor_data = datetime.min
+
+    for pc_num, linhas_pc in pcs.items():
+        data_pc = max((_parse_dt_emissao(l["dt_emissao"]) for l in linhas_pc), default=datetime.min)
+        if melhor is None or data_pc > melhor_data:
+            melhor = (pc_num, linhas_pc)
+            melhor_data = data_pc
+
+    return melhor
+
+
+def _parse_dt_emissao(valor) -> datetime:
+    if isinstance(valor, datetime):
+        return valor
+    if isinstance(valor, date):
+        return datetime.combine(valor, datetime.min.time())
+
+    texto = str(valor or "").strip()
+    if not texto:
+        return datetime.min
+
+    for formato in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y", "%d/%m/%Y %H:%M:%S"):
+        try:
+            return datetime.strptime(texto, formato)
+        except ValueError:
+            continue
+
+    return datetime.min
 
 
 def _pc_informado_no_nome(ficha: FichaPedido) -> str | None:
