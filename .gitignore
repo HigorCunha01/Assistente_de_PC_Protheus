@@ -30,6 +30,9 @@ data/tmp/*
 !data/referencias/.gitkeep
 !data/tmp/.gitkeep
 
+# Local planning docs
+Roadmap.txt
+
 # IDE
 .vscode/
 .idea/

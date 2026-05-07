@@ -159,6 +159,18 @@ def _parse_row_item(row: list, idx: dict) -> ItemExtraido | None:
     return ItemExtraido(descricao=desc, quantidade=qtd, valor_unitario=vunit)
 
 
+def _corrigir_descricao_com_codigo_grudado(codigo: str, descricao: str) -> str:
+    """Move trecho textual grudado no código para a descrição.
+
+    Alguns DANFEs emitidos pelo Bling saem sem espaço entre código/CFOP e a
+    primeira palavra da descrição, por exemplo: ``CFOP5102Memoria notebook``.
+    """
+    m = re.match(r"^(?:CFOP)?\d{4,}([A-Za-zÀ-ÿ].*)$", codigo or "")
+    if not m:
+        return descricao
+    return f"{m.group(1).strip()} {descricao}".strip()
+
+
 def _extrair_itens_via_regex(texto: str) -> list[ItemExtraido]:
     """Fallback: extrai itens via regex linha-a-linha."""
     itens: list[ItemExtraido] = []
@@ -176,7 +188,10 @@ def _extrair_itens_via_regex(texto: str) -> list[ItemExtraido]:
 
     for m in REGEX_LINHA_ITEM.finditer(secao):
         try:
-            desc = m.group("desc").strip()
+            desc = _corrigir_descricao_com_codigo_grudado(
+                m.group("cod").strip(),
+                m.group("desc").strip(),
+            )
             qtd = parse_decimal_br(m.group("qtd"))
             vunit = parse_decimal_br(m.group("vunit"))
             if desc and qtd is not None and vunit is not None:
