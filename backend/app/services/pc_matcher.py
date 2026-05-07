@@ -8,8 +8,10 @@ Regra:
    recente (DT EMISSAO PC).
 4. Se não houver PC do mesmo fornecedor+filial, não sugere nada.
 """
+import re
+
 from app.schemas.ficha import FichaPedido
-from app.services.referencias import pedidos_compra_por_fornecedor_filial
+from app.services.referencias import pedidos_compra_por_fornecedor_filial, pedidos_compra_por_numero
 from app.services.obs_mes_transformer import transformar_obs
 
 
@@ -23,7 +25,12 @@ def sugerir_pedido_compra(ficha: FichaPedido) -> None:
         return
 
     candidatos = pedidos_compra_por_fornecedor_filial(ficha.fornecedor_cnpj, ficha.filial_codigo)
+    pc_nome_arquivo = _pc_informado_no_nome(ficha)
     if not candidatos:
+        if pc_nome_arquivo:
+            linhas_pc_nome = pedidos_compra_por_numero(pc_nome_arquivo)
+            if _pc_do_nome_compativel(ficha, linhas_pc_nome):
+                _aplicar_pc_sugerido(ficha, pc_nome_arquivo, linhas_pc_nome, match_exato=True)
         return
 
     # Agrupa linhas por PC NUM
@@ -35,6 +42,15 @@ def sugerir_pedido_compra(ficha: FichaPedido) -> None:
 
     if not pcs:
         return
+
+    if pc_nome_arquivo and pc_nome_arquivo in pcs:
+        _aplicar_pc_sugerido(ficha, pc_nome_arquivo, pcs[pc_nome_arquivo], match_exato=True)
+        return
+    if pc_nome_arquivo:
+        linhas_pc_nome = pedidos_compra_por_numero(pc_nome_arquivo)
+        if _pc_do_nome_compativel(ficha, linhas_pc_nome):
+            _aplicar_pc_sugerido(ficha, pc_nome_arquivo, linhas_pc_nome, match_exato=True)
+            return
 
     # Pra cada PC, calcula distância total e flag de match exato
     melhor_pc = None
@@ -67,6 +83,10 @@ def sugerir_pedido_compra(ficha: FichaPedido) -> None:
         return
 
     pc_num, linhas = melhor_pc
+    _aplicar_pc_sugerido(ficha, pc_num, linhas, match_exato=melhor_exato)
+
+
+def _aplicar_pc_sugerido(ficha: FichaPedido, pc_num: str, linhas: list[dict], match_exato: bool) -> None:
     obs_original = next((l["obs_pedido"] for l in linhas if l["obs_pedido"]), None)
     obs_modificada = transformar_obs(obs_original) if obs_original else None
 
@@ -75,10 +95,31 @@ def sugerir_pedido_compra(ficha: FichaPedido) -> None:
     ficha.sugestao_pc_obs_modificada = obs_modificada
 
     # Anota observação se foi match com variação de preço
-    if not melhor_exato:
+    if not match_exato:
         ficha.observacoes.append(
             f"PC sugerido por proximidade — preços do PC antigo diferem do documento. Conferir antes de copiar."
         )
+
+
+def _pc_informado_no_nome(ficha: FichaPedido) -> str | None:
+    for nome in ficha.arquivos_origem:
+        m = re.search(r"_pc_?\s*(\d{5,6})", nome, re.IGNORECASE)
+        if not m:
+            m = re.search(r"pc_?(\d{5,6})", nome, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _pc_do_nome_compativel(ficha: FichaPedido, linhas: list[dict]) -> bool:
+    if not linhas or not ficha.filial_codigo or not ficha.itens:
+        return False
+    if not any(l["filial"] == ficha.filial_codigo for l in linhas):
+        return False
+    distancia, _ = _calcular_distancia(ficha.itens, linhas)
+    total_doc = sum(float(i.quantidade) * float(i.valor_unitario) for i in ficha.itens)
+    limite = max(1.0, total_doc * 0.05)
+    return distancia <= limite
 
 
 def _calcular_distancia(itens_ficha, linhas_pc):

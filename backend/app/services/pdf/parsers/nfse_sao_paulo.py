@@ -57,6 +57,10 @@ def parse(texto: str, caminho: Path) -> ParseResult:
 
     valor = None
     m_val = re.search(r"VALOR\s*TOTAL\s*DO\s*SERVI[ÇC]O\s*=?\s*R\$\s*([\d.,]+)", texto, re.IGNORECASE)
+    if not m_val:
+        m_val = re.search(r"VALOR\s*TOTAL\s*COBRADO\s*=\s*R\$\s*([\d.,]+)", texto, re.IGNORECASE)
+    if not m_val:
+        m_val = re.search(r"Valor\s+dos\s+servi[çc]os:\s*R\$\s*([\d.,]+)", texto, re.IGNORECASE)
     if m_val:
         valor = parse_decimal_br(m_val.group(1))
 

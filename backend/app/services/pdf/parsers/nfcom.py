@@ -12,8 +12,10 @@ from app.services.pdf.utils import extrair_cnpjs, normalizar_cnpj, parse_decimal
 def _extrair_total_nf(texto: str):
     padroes = [
         r"VALOR\s+TOTAL\s+NF\s*([\d.]+,\d{2}|[\d]+[.]\d{2})",
+        r"VALOR\s+DA\s+FATURA\s*R\$\s*([\d.]+,\d{2}|[\d]+[.]\d{2})",
         r"TOTAL\s+A\s+PAGAR\s*(?:-\s*R\$|R\$|:)?\s*([\d.]+,\d{2}|[\d]+[.]\d{2})",
         r"TOTAL\s+A\s+PAGAR[\s\S]{0,30}?([\d.]+,\d{2}|[\d]+[.]\d{2})",
+        r"TIM\s*S\.A\.[\s\S]{0,120}?R\$\s*([\d.]+,\d{2})",
     ]
     for padrao in padroes:
         m = re.search(padrao, texto, re.IGNORECASE)
@@ -34,6 +36,12 @@ def parse(texto: str, caminho: Path) -> ParseResult:
         and "COMUNICAÇÃO ELETRÔNICA" not in upper
         and "COMUNICACAO ELETRONICA" not in upper
         and "NFCOM" not in upper
+        and "CLARO S/A" not in upper
+        and "TIM S.A" not in upper
+        and "VIVO.COM" not in upper
+        and "TELEFÔNICA BRASIL" not in upper
+        and "TELEFONICA BRASIL" not in upper
+        and "TOTAL A PAGAR" not in upper
     ):
         return ParseResult(template_usado="nfcom", confianca=0.0)
 
@@ -47,12 +55,27 @@ def parse(texto: str, caminho: Path) -> ParseResult:
         else:
             cnpj_emissor = cnpj_emissor or c
 
+    m_cnpj_filial = re.search(
+        r"CNPJ\s+Fili\s*a\s*l\s*:?\s*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})",
+        texto,
+        re.IGNORECASE,
+    )
+    if m_cnpj_filial and ("TELEFONICA BRASIL" in upper or "TELEFÔNICA BRASIL" in upper):
+        cnpj_filial = normalizar_cnpj(m_cnpj_filial.group(1))
+        if "NFCOM" not in upper and cnpj_filial:
+            cnpj_emissor = cnpj_filial
+
     if not cnpj_tomador:
         m_tomador_ruidoso = re.search(r"CPF/CNP[\s\S]{0,40}?((?:\D*\d){14})", texto, re.IGNORECASE)
         if m_tomador_ruidoso:
             cnpj_ruidoso = normalizar_cnpj(m_tomador_ruidoso.group(1))
             if cnpj_ruidoso.startswith(raizes):
                 cnpj_tomador = cnpj_ruidoso
+    if not cnpj_tomador:
+        if "RTT SOLUCOES INDUSTRIAIS" in upper or "TECNOLITA INDUSTRIAL" in upper:
+            cnpj_tomador = "67844183000100"
+        elif "RTT ENGINEERED SOLUTIONS" in upper or "REMA LTDA" in upper:
+            cnpj_tomador = "73305997000161"
 
     # Nome emissor: linha antes do CNPJ do emissor
     nome_emissor = None
@@ -73,13 +96,21 @@ def parse(texto: str, caminho: Path) -> ParseResult:
         m = re.search(r"NOTA\s*FISCAL\s*(?:FATURA\s*)?(?:No\.?|N[º°]?)\s*(\d+)", texto, re.IGNORECASE)
     if not m:
         m = re.search(r"N[º°]?\s*NFCOM\s*(\d+)", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"N[º°]?\s+da\s+conta\s*:?\s*(\d{5,})", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"Nro\.Documento\s+Esp[eé]cie[\s\S]{0,80}?(?:FL)?(\d{5,})", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"N[º°]?\s*\.?:?\s*(\d{5,})\s+DANFE\s*Com", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"FATURA\s+DE\s+PAGAMENTO:\s*(\d{5,})", texto, re.IGNORECASE)
     if m:
         numero = remover_zeros_esquerda(m.group(1))
 
     # Itens: tabela "COD. ITENS UN QTD V. UNIT. TOTAL"
     itens: list[ItemExtraido] = []
     bloco = re.search(
-        r"(?:COD\.\s*ITENS|ITENS\s+DA\s+FATURA)[\s\S]+?\n([\s\S]+?)(?=VALOR\s*(?:NFF|TOTAL\s*NF)|TOTAL\s*BC\s*ICMS|TOTAL\s+BASE\s+DE\s+C[ÁA]LCULO|INFORMA[ÇC][ÕO]ES\s+COMPLEMENTARES|$)",
+        r"(?:COD\.\s*ITENS|ITENS\s+DA\s+FATURA|ITENS)[\s\S]+?\n([\s\S]+?)(?=VALOR\s*(?:NFF|TOTAL\s*NF)|TOTAL\s*BC\s*ICMS|TOTAL\s+BASE\s+DE\s+C[ÁA]LCULO|INFORMA[ÇC][ÕO]ES\s+COMPLEMENTARES|$)",
         texto,
         re.IGNORECASE,
     )
@@ -134,8 +165,41 @@ def parse(texto: str, caminho: Path) -> ParseResult:
                 if desc and vu is not None:
                     itens.append(ItemExtraido(descricao=desc, quantidade=qtd, valor_unitario=vu))
 
+            # Padrão comum NFCom: ITEM CODIGO DESCRICAO CFOP/UN/QTD...
+            m = re.match(
+                r"^\s*\d+\s+\S+\s+(.+?)\s+\d{4}\s+[A-Z]{1,4}\s+([\d.,]+)\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)",
+                linha,
+                re.IGNORECASE,
+            )
+            if m:
+                desc = m.group(1).strip()
+                qtd = parse_decimal_br(m.group(2)) or 1.0
+                vu = parse_decimal_br(m.group(3))
+                if desc and vu is not None:
+                    itens.append(ItemExtraido(descricao=desc, quantidade=qtd, valor_unitario=vu))
+
+            # Padrão NFCom sem CFOP na linha: ITEM CODIGO DESCRICAO UN QTD R$ UNIT R$ TOTAL
+            m = re.match(
+                r"^\s*\d+\s+\S+\s+(.+?)\s+[A-Z]{1,4}\s+([\d.,]+)\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)",
+                linha,
+                re.IGNORECASE,
+            )
+            if m:
+                desc = m.group(1).strip()
+                qtd = parse_decimal_br(m.group(2)) or 1.0
+                vu = parse_decimal_br(m.group(3))
+                if desc and vu is not None:
+                    itens.append(ItemExtraido(descricao=desc, quantidade=qtd, valor_unitario=vu))
+
     valor_total_nf = _extrair_total_nf(texto)
-    if valor_total_nf and ("TELEFONICA BRASIL" in upper or "TELEFÔNICA BRASIL" in upper or "VIVO.COM" in upper):
+    if valor_total_nf and (
+        "TELEFONICA BRASIL" in upper
+        or "TELEFÔNICA BRASIL" in upper
+        or "VIVO.COM" in upper
+        or "CLARO S/A" in upper
+        or "TIM S.A" in upper
+        or "IMPACTO TELECOM" in upper
+    ):
         itens = [ItemExtraido(
             descricao="Serviços de telecomunicação",
             quantidade=1.0,

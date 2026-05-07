@@ -15,6 +15,10 @@ def parse(texto: str, caminho: Path) -> ParseResult:
 
     numero = None
     m = re.search(r"N[uú]mero\s*/\s*S[eé]rie\s*\n\s*(\d+)\s*/\s*\w+", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"N[uú]mero\s*/\s*S[eé]rie\s*\n\s*(\d{6,})", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"N[uú]mero\s*/\s*S[eé]rie[\s\S]{0,80}?(\d{6,})", texto, re.IGNORECASE)
     if m:
         numero = remover_zeros_esquerda(m.group(1))
 
@@ -28,6 +32,8 @@ def parse(texto: str, caminho: Path) -> ParseResult:
         m_nome = re.search(r"Nome\s*empresarial[:\s]+([^\n]+)", bloco_prest.group(1), re.IGNORECASE)
         if not m_nome:
             m_nome = re.search(r"Nome\s*fantasia[:\s]+([^\n]+)", bloco_prest.group(1), re.IGNORECASE)
+        if not m_nome:
+            m_nome = re.search(r"Raz[aã]o\s*Social[:\s]+([^\n]+)", bloco_prest.group(1), re.IGNORECASE)
         if m_nome:
             nome_emissor = m_nome.group(1).strip()
 

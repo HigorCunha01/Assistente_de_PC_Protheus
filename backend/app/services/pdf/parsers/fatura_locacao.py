@@ -9,6 +9,9 @@ from app.services.pdf.parsers.base import ParseResult, ItemExtraido
 from app.services.pdf.utils import extrair_cnpjs, parse_decimal_br, remover_zeros_esquerda
 
 
+VALOR_RE = r"[\d.,]+(?:\s+[\d.,]+)*"
+
+
 def parse(texto: str, caminho: Path) -> ParseResult:
     upper = texto.upper()
     # Heurística: fatura/recibo de locação tem "FATURA" ou "RECIBO" + "LOCAÇÃO".
@@ -43,6 +46,12 @@ def parse(texto: str, caminho: Path) -> ParseResult:
         m = re.search(r"Financeiro:[\s\S]{0,200}?(\d{4,8})\s*\n", texto, re.IGNORECASE)
     if not m:
         m = re.search(r"RECIBO\s+DE\s+LOCA[ÇC][AÃ]O\s*n[º°o]?\s*(\d+)", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"N[º°]\s*:\s*(\d{2,8})", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"\b(\d{6,})\s*/\s*FL\b", texto, re.IGNORECASE)
+    if not m:
+        m = re.search(r"DUPLICATA\s+N[º°]?\s+DE\s+ORDEM[\s\S]{0,80}?(\d{6,})", texto, re.IGNORECASE)
     if m:
         numero = remover_zeros_esquerda(m.group(1))
 
@@ -55,21 +64,38 @@ def parse(texto: str, caminho: Path) -> ParseResult:
             if not s or "DESCRI" in s.upper() or "QUANT" in s.upper():
                 continue
             # Padrão: "DESCRICAO 1 839,00 839,00" ou "COD DESC 1 839,00 839,00"
-            m = re.match(r"^(.+?)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$", s)
+            m = re.match(rf"^(.+?)\s+([\d.,]+)\s+(R\\$\\s*)?({VALOR_RE})\s+(R\\$\\s*)?({VALOR_RE})\s*$", s)
             if m:
                 desc = m.group(1).strip()
                 qtd = parse_decimal_br(m.group(2)) or 1.0
-                vu = parse_decimal_br(m.group(3))
+                vu = parse_decimal_br(m.group(4))
                 if desc and vu is not None and vu > 0:
                     itens.append(ItemExtraido(descricao=desc, quantidade=qtd, valor_unitario=vu))
 
+    if not itens:
+        m = re.search(
+            rf"Item\s+Descri[çc][aã]o\s+Qtde\s+Prc\.\s*Unit\.\s+Total\s*\n\s*\d+\s+(.+?)\s+([\d.,]+)\s+({VALOR_RE})\s+({VALOR_RE})",
+            texto,
+            re.IGNORECASE,
+        )
+        if m:
+            desc = m.group(1).strip()
+            qtd = parse_decimal_br(m.group(2)) or 1.0
+            vu = parse_decimal_br(m.group(3))
+            if desc and vu is not None:
+                itens.append(ItemExtraido(descricao=desc, quantidade=qtd, valor_unitario=vu))
+
     # Fallback: total da fatura como item único
     if not itens:
-        m = re.search(r"VALOR\s*TOTAL\s*DA\s*FATURA[\s\S]{0,80}?R\$\s*([\d.,]+)", texto, re.IGNORECASE)
+        m = re.search(rf"VALOR\s*TOTAL\s*DA\s*FATURA[\s\S]{{0,80}}?R\$\s*({VALOR_RE})", texto, re.IGNORECASE)
         if not m:
-            m = re.search(r"Total\s+L[ií]quido\s*\n\s*[\d.,]+\s+[\d.,]+\s+([\d.,]+)", texto, re.IGNORECASE)
+            m = re.search(rf"Total\s+L[ií]quido\s*\n\s*{VALOR_RE}\s+{VALOR_RE}\s+({VALOR_RE})", texto, re.IGNORECASE)
         if not m:
-            m = re.search(r"Vencimento:[^\n]+?R\$\s*([\d.,]+)", texto, re.IGNORECASE)
+            m = re.search(rf"Vencimento:[^\n]+?R\$\s*({VALOR_RE})", texto, re.IGNORECASE)
+        if not m:
+            m = re.search(rf"TOTAL\s+FATURA\s*\n\s*({VALOR_RE})", texto, re.IGNORECASE)
+        if not m:
+            m = re.search(rf"Total\s+Geral\s+R\s*\$\s*({VALOR_RE})", texto, re.IGNORECASE)
         if m:
             v = parse_decimal_br(m.group(1))
             if v:

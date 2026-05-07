@@ -227,3 +227,13 @@ def pedidos_compra_por_fornecedor_filial(fornecedor_cnpj: str, filial: str) -> l
             continue
         out.append(_pc_to_dict(r))
     return out
+
+
+def pedidos_compra_por_numero(pc_num: str) -> list[dict]:
+    """Retorna todas as linhas de um PC específico."""
+    pc_norm = _strip(pc_num)
+    if not pc_norm:
+        return []
+    path = settings.referencias_dir / settings.arquivo_pedidos_compra
+    rows = _get_cached("pedidos_compra", path)
+    return [_pc_to_dict(r) for r in rows if _strip(r.get("PC NUM")) == pc_norm]

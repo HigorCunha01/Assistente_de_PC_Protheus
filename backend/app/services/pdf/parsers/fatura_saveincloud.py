@@ -14,13 +14,20 @@ from app.services.pdf.utils import extrair_cnpjs, parse_decimal_br, remover_zero
 
 REGEX_FATURA = re.compile(r"Fatura\s*#?\s*(\d+)", re.IGNORECASE)
 # Itens: descrição [tab/spaces] R$VALOR
-REGEX_ITEM = re.compile(r"^([A-Za-zÀ-ÿ][^\n]*?)\s+R\$\s*([\d.,]+)\s*$", re.MULTILINE)
+REGEX_ITEM = re.compile(r"^([A-Za-zÀ-ÿ0-9][^\n]*?)\s+(?:[@O*]\s*)?R\$\s*([\d.,]+)\s*$", re.MULTILINE)
 PALAVRAS_RESERVADAS = {"sub-total", "subtotal", "crédito", "credito", "total", "balanço", "balanco", "dt", "data"}
 
 
 def parse(texto: str, caminho: Path) -> ParseResult:
     upper = texto.upper()
-    if "SAVEINCLOUD" not in upper.replace(" ", "") and "SAVE IN CLOUD" not in upper:
+    upper_colado = upper.replace(" ", "")
+    if (
+        "SAVEINCLOUD" not in upper_colado
+        and "SAVELNCLOUD" not in upper_colado
+        and "SAVEINCLOUD" not in upper_colado.replace("Ó", "O")
+        and "SAVE IN CLOUD" not in upper
+        and not ("IP COMPANY" in upper and "FATURA #" in upper)
+    ):
         return ParseResult(template_usado="fatura_saveincloud", confianca=0.0)
 
     nome_emissor = "SaveInCloud"
@@ -41,6 +48,10 @@ def parse(texto: str, caminho: Path) -> ParseResult:
     m = REGEX_FATURA.search(texto)
     if m:
         numero = remover_zeros_esquerda(m.group(1))
+    if not numero:
+        m = re.search(r"\bNF\s+(\d{3,})", texto, re.IGNORECASE)
+        if m:
+            numero = remover_zeros_esquerda(m.group(1))
 
     # Itens
     itens: list[ItemExtraido] = []
@@ -50,10 +61,11 @@ def parse(texto: str, caminho: Path) -> ParseResult:
 
     for m in REGEX_ITEM.finditer(secao):
         desc = m.group(1).strip()
+        desc = re.sub(r"\s*[@O*]\s*$", "", desc).strip()
         if desc.lower() in PALAVRAS_RESERVADAS:
             continue
         vlr = parse_decimal_br(m.group(2))
-        if desc and vlr is not None:
+        if desc and not desc.upper().startswith("NF ") and vlr is not None and vlr > 0:
             itens.append(ItemExtraido(descricao=desc, quantidade=1.0, valor_unitario=vlr))
 
     confianca = 0.0
