@@ -14,6 +14,8 @@ from app.schemas.ficha import FichaPedido
 
 HEADER_FILL = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
+TOTAL_FILL = PatternFill(start_color="D9EAF7", end_color="D9EAF7", fill_type="solid")
+TOTAL_FONT = Font(bold=True, color="1F4E78")
 
 
 def gerar_excel(fichas: list[FichaPedido], destino: Path) -> Path:
@@ -88,12 +90,37 @@ def gerar_excel(fichas: list[FichaPedido], destino: Path) -> Path:
             ws_i.cell(row=linha, column=9, value=float(item.quantidade) * float(item.valor_unitario))
             ws_i.cell(row=linha, column=10, value="sim" if item.valor_unitario_calculado else "não")
             linha += 1
+        if f.itens:
+            _escrever_total_documento(ws_i, linha, f)
+            linha += 1
 
     _ajustar_largura(ws_i, cabec_itens)
 
     destino.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(destino))
     return destino
+
+
+def _valor_total_documento(f: FichaPedido) -> float:
+    return sum(float(item.quantidade) * float(item.valor_unitario) for item in f.itens)
+
+
+def _escrever_total_documento(ws, linha: int, f: FichaPedido) -> None:
+    total = _valor_total_documento(f)
+    ws.cell(row=linha, column=1, value=f.filial_codigo or "")
+    ws.cell(row=linha, column=2, value=f.fornecedor_codigo or "")
+    ws.cell(row=linha, column=3, value=f.fornecedor_nome or "")
+    ws.cell(row=linha, column=4, value=", ".join(f.numeros_documentos))
+    ws.cell(row=linha, column=5, value="TOTAL")
+    ws.cell(row=linha, column=6, value="TOTAL DO DOCUMENTO")
+    ws.cell(row=linha, column=7, value=1)
+    ws.cell(row=linha, column=8, value=total)
+    ws.cell(row=linha, column=9, value=total)
+    ws.cell(row=linha, column=10, value="")
+    for col in range(1, 11):
+        cell = ws.cell(row=linha, column=col)
+        cell.font = TOTAL_FONT
+        cell.fill = TOTAL_FILL
 
 
 def _escrever_cabec(ws, cabec: list[str]) -> None:

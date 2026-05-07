@@ -136,6 +136,10 @@ function FichaCard({
   const status = ficha.status_extracao;
   const variantStatus =
     status === "ok" ? "success" : status === "parcial" ? "warning" : status === "manual" ? "outline" : "destructive";
+  const totalDocumento = ficha.itens.reduce(
+    (total, item) => total + Number(item.quantidade || 0) * Number(item.valor_unitario || 0),
+    0
+  );
 
   return (
     <Card>
@@ -212,7 +216,12 @@ function FichaCard({
 
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="font-semibold">Itens</h3>
+            <div>
+              <h3 className="font-semibold">Itens</h3>
+              <p className="text-sm text-muted-foreground">
+                Total do documento: {formatCurrency(totalDocumento)}
+              </p>
+            </div>
             <Button size="sm" variant="outline" onClick={onAddItem}>
               + Adicionar item
             </Button>
@@ -247,6 +256,14 @@ function FichaCard({
             {ficha.itens.length === 0 && (
               <p className="text-sm text-muted-foreground">Nenhum item — adicione manualmente.</p>
             )}
+            {ficha.itens.length > 0 && (
+              <div className="grid grid-cols-1 gap-2 rounded border border-blue-200 bg-blue-50 p-2 text-sm font-semibold text-blue-950 md:grid-cols-[1fr_100px_120px_auto]">
+                <span>TOTAL DO DOCUMENTO</span>
+                <span>1</span>
+                <span>{formatCurrency(totalDocumento)}</span>
+                <span>{formatCurrency(totalDocumento)}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -263,6 +280,13 @@ function FichaCard({
       </CardContent>
     </Card>
   );
+}
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value || 0);
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
