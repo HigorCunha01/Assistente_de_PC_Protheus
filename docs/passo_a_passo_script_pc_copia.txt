@@ -1,0 +1,197 @@
+PASSO A PASSO - RODAR O SCRIPT "PC PARA COPIA" EM OUTRO COMPUTADOR
+
+Objetivo:
+Gerar um Excel chamado pc_para_copia.xlsx lendo todos os PDFs da pasta atual.
+
+O Excel gerado tera as colunas:
+Nome do arquivo | Filial | Cod Fornecedor | Pedido p/ copia | Valor total do documento
+
+
+1. ABRIR O POWERSHELL COMO ADMINISTRADOR
+
+Clique com o botao direito no PowerShell e escolha:
+Executar como administrador
+
+
+2. INSTALAR PYTHON
+
+Rode:
+
+winget install Python.Python.3.12
+
+Feche e abra o PowerShell novamente.
+
+Teste:
+
+python --version
+
+Se nao funcionar, teste:
+
+py --version
+
+
+3. INSTALAR GIT
+
+Rode:
+
+winget install Git.Git
+
+Feche e abra o PowerShell novamente.
+
+Teste:
+
+git --version
+
+
+4. INSTALAR TESSERACT OCR
+
+O Tesseract e necessario para ler PDFs escaneados/imagem.
+
+Rode:
+
+winget install UB-Mannheim.TesseractOCR
+
+Feche e abra o PowerShell novamente.
+
+Teste:
+
+tesseract --version
+
+Se o comando nao for reconhecido, reinicie o computador.
+
+
+5. BAIXAR O PROJETO
+
+Crie a pasta C:\dev:
+
+mkdir C:\dev
+
+Entre nela:
+
+cd C:\dev
+
+Baixe o projeto do GitHub:
+
+git clone https://github.com/HigorCunha01/Assistente_de_PC_Protheus.git protheus-pc
+
+Entre na pasta do projeto:
+
+cd C:\dev\protheus-pc
+
+
+6. INSTALAR AS DEPENDENCIAS DO PROJETO
+
+Rode:
+
+python -m pip install -r backend\requirements.txt
+
+Se o comando python nao funcionar, use:
+
+py -m pip install -r backend\requirements.txt
+
+
+7. COLOCAR AS PLANILHAS DE REFERENCIA
+
+Coloque estes arquivos dentro da pasta:
+
+C:\dev\protheus-pc\data\referencias
+
+Arquivos necessarios:
+
+Filiais.xlsx
+Fornecedores.xlsx
+Pedidos_de_Compra.xlsx
+
+
+8. TESTAR SE O SCRIPT ESTA FUNCIONANDO
+
+Rode:
+
+python C:\dev\protheus-pc\scripts\gerar_pcs_copia.py --help
+
+Se o comando python nao funcionar, use:
+
+py C:\dev\protheus-pc\scripts\gerar_pcs_copia.py --help
+
+Se aparecer a ajuda do script, esta tudo certo.
+
+
+9. RODAR O SCRIPT EM UMA PASTA DE PDFS
+
+Entre na pasta onde estao os PDFs.
+Exemplo:
+
+cd "C:\Users\Usuario\Documents\Contas 2026\05 - MAIO"
+
+Rode:
+
+python C:\dev\protheus-pc\scripts\gerar_pcs_copia.py
+
+Ou, se precisar usar py:
+
+py C:\dev\protheus-pc\scripts\gerar_pcs_copia.py
+
+O script vai ler todos os PDFs da pasta atual e gerar o arquivo:
+
+pc_para_copia.xlsx
+
+na mesma pasta dos PDFs.
+
+
+10. CRIAR UM ARQUIVO BAT PARA RODAR COM DOIS CLIQUES
+
+Dentro da pasta dos PDFs, crie um arquivo chamado:
+
+Gerar PC para copia.bat
+
+Com este conteudo:
+
+@echo off
+cd /d "%~dp0"
+python C:\dev\protheus-pc\scripts\gerar_pcs_copia.py
+pause
+
+Se a maquina usa py em vez de python, use este conteudo:
+
+@echo off
+cd /d "%~dp0"
+py C:\dev\protheus-pc\scripts\gerar_pcs_copia.py
+pause
+
+Depois disso, basta dar dois cliques no arquivo .bat.
+
+
+11. COMO USAR NOS MESES SEGUINTES
+
+Para maio:
+
+cd "C:\...\05 - MAIO"
+python C:\dev\protheus-pc\scripts\gerar_pcs_copia.py
+
+Para junho:
+
+cd "C:\...\06 - JUNHO"
+python C:\dev\protheus-pc\scripts\gerar_pcs_copia.py
+
+O script sempre usa a pasta atual do terminal.
+
+
+12. PROBLEMAS COMUNS
+
+Erro: python nao e reconhecido
+Solucao:
+Use py no lugar de python, ou reinstale o Python marcando "Add Python to PATH".
+
+Erro: tesseract nao e reconhecido
+Solucao:
+Feche e abra o PowerShell. Se continuar, reinicie o computador.
+
+Erro: planilha de referencia nao encontrada
+Solucao:
+Confira se os arquivos estao em:
+C:\dev\protheus-pc\data\referencias
+
+Erro ao ler alguns PDFs escaneados
+Solucao:
+Confirme se o Tesseract esta instalado:
+tesseract --version

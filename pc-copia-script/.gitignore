@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+pc_para_copia.xlsx
+data/tmp/*
+!data/tmp/.gitkeep
+referencias/*.xlsx
+!referencias/.gitkeep
